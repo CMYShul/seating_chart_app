@@ -106,7 +106,7 @@ export function LayoutEditor({
                             key={item.id}
                             item={item}
                             occupant={occupant}
-                            history={historyMap[item.label]}
+                            history={historyMap[item.id]}
                             selected={selectedIds.has(item.id)}
                             onSelect={(multi: boolean) => onToggleSelect(item.id, multi)}
                             onUpdateLabel={onUpdateLabel}

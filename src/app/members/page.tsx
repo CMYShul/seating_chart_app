@@ -26,6 +26,7 @@ export default function MembersPage() {
 
     useEffect(() => {
         loadMembers();
+        loadHistory();
     }, []);
 
     // We don't need a separate effect to save to localStorage anymore
@@ -47,7 +48,7 @@ export default function MembersPage() {
 
                 setHistoryMap(map);
             }
-        } catch (e) { console.error(e); }
+        } catch (e) { console.error("Failed to load history:", e); }
     };
 
     const handleAddCsvMembers = async (newMembers: Omit<Member, "id">[]) => {

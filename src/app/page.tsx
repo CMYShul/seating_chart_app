@@ -4,7 +4,6 @@ import { useState, useMemo, useEffect, useRef } from "react";
 import {
   DndContext,
   DragOverlay,
-  DragStartEvent,
   DragEndEvent,
   PointerSensor,
   useSensor,
@@ -13,15 +12,17 @@ import {
 import { Sidebar } from "@/components/Sidebar";
 import { LayoutEditor } from "@/components/LayoutEditor";
 import { MemberCard } from "@/components/MemberCard";
-import { Member, LayoutItem, Room, HistoryMap, ColumnConfig, Table } from "@/lib/types";
+import { Member, LayoutItem, HistoryMap, ColumnConfig, Table } from "@/lib/types";
 import { ROOMS } from "@/lib/mock-data";
-import { Users, Settings, Plus, LayoutGrid, FileText, Grid3X3, Trash2, Calendar, ChevronLeft, ChevronRight } from "lucide-react";
+import { Users, Settings, Plus, LayoutGrid, FileText, Grid3X3, Trash2, ChevronLeft, ChevronRight } from "lucide-react";
 import Link from "next/link";
 import { PdfUploader } from "@/components/PdfUploader";
 import { cn } from "@/lib/utils";
-import { getGlobalHistory, STORAGE_KEYS } from "@/lib/storage-utils";
+
 
 const GRID_SIZE = 24;
+// snap must be defined at module level (or before getNextX) so it can be used in getNextX
+const snap = (v: number) => Math.round(v / GRID_SIZE) * GRID_SIZE;
 
 export default function Home() {
   const [showPdfUploader, setShowPdfUploader] = useState(false);
@@ -31,13 +32,21 @@ export default function Home() {
 
   const [items, setItems] = useState<LayoutItem[]>([]);
   const [tables, setTables] = useState<Table[]>([]);
-  const [columnConfigs, setColumnConfigs] = useState<ColumnConfig[]>([
-    { id: "col1", seatsPerTable: 2, xOffset: 100 },
-    { id: "col2", seatsPerTable: 3, xOffset: 484 }, // 100 + (2 * 100) + 184 gap
-  ]);
+  const [columnConfigs, setColumnConfigs] = useState<ColumnConfig[]>([]);
 
   const [activeMember, setActiveMember] = useState<Member | null>(null);
   const [historyMap, setHistoryMap] = useState<HistoryMap>({});
+
+  // Refs to always have fresh state for async save callbacks
+  const itemsRef = useRef<LayoutItem[]>([]);
+  const tablesRef = useRef<Table[]>([]);
+  const columnConfigsRef = useRef<ColumnConfig[]>([]);
+  const currentYearRef = useRef<number>(2025);
+
+  useEffect(() => { itemsRef.current = items; }, [items]);
+  useEffect(() => { tablesRef.current = tables; }, [tables]);
+  useEffect(() => { columnConfigsRef.current = columnConfigs; }, [columnConfigs]);
+  useEffect(() => { currentYearRef.current = currentYear; }, [currentYear]);
 
   // Helper to calculate next column start
   const getNextX = (configs: ColumnConfig[]) => {
@@ -46,23 +55,37 @@ export default function Home() {
     return snap(last.xOffset + (last.seatsPerTable * 100) + 184);
   };
 
-  const loadLayout = () => {
-    const savedLayout = localStorage.getItem(STORAGE_KEYS.LAYOUT(currentYear));
-    const savedTables = localStorage.getItem(STORAGE_KEYS.TABLES(currentYear));
-    const savedCols = localStorage.getItem(`seating_app_cols_${currentYear}`);
-
-    if (savedLayout) setItems(JSON.parse(savedLayout));
-    else setItems([]);
-
-    if (savedTables) setTables(JSON.parse(savedTables));
-    else setTables([]);
-
-    if (savedCols) setColumnConfigs(JSON.parse(savedCols));
-    else setColumnConfigs([
-      { id: "col1", seatsPerTable: 2, xOffset: 100 },
-      { id: "col2", seatsPerTable: 3, xOffset: 484 }
-    ]);
+  const loadLayout = async () => {
+    try {
+      const res = await fetch(`/api/layout?year=${currentYear}`);
+      if (res.ok) {
+        const data = await res.json();
+        setItems(data.items || []);
+        setTables(data.tables || []);
+        setColumnConfigs(data.columns.length > 0 ? data.columns : [
+          { id: "col1", seatsPerTable: 2, xOffset: 100 },
+          { id: "col2", seatsPerTable: 3, xOffset: 484 }
+        ]);
+      }
+    } catch (e) { console.error("Failed to load layout:", e); }
   };
+
+  // saveLayout reads from refs to avoid stale closure — always saves the latest state
+  const saveLayout = async () => {
+    try {
+      await fetch("/api/layout", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          year: currentYearRef.current,
+          items: itemsRef.current,
+          tables: tablesRef.current,
+          columns: columnConfigsRef.current
+        })
+      });
+    } catch (e) { console.error("Failed to save layout:", e); }
+  };
+
   // Load members from API
   const loadMembers = async () => {
     try {
@@ -76,11 +99,12 @@ export default function Home() {
     try {
       const res = await fetch("/api/history");
       if (res.ok) {
-        const data: Array<{ year: number, seatLabel: string, displayName: string }> = await res.json();
+        const data: Array<{ year: number, seatId: string, seatLabel: string, displayName: string }> = await res.json();
         const map: HistoryMap = {};
         data.forEach(h => {
-          if (!map[h.seatLabel]) map[h.seatLabel] = [];
-          map[h.seatLabel].push({ year: h.year, displayName: h.displayName });
+          // Key by seatId (unique per seat) — never by label which can be shared across rows
+          if (!map[h.seatId]) map[h.seatId] = [];
+          map[h.seatId].push({ year: h.year, displayName: h.displayName });
         });
         setHistoryMap(map);
       }
@@ -96,15 +120,14 @@ export default function Home() {
     loadHistory();
   }, [currentYear]);
 
-  // Persist layout to localStorage when items/tables/columnConfigs change (skip first run after year change)
+  // Persist layout to server when items/tables/columnConfigs change (skip first run after year change)
   useEffect(() => {
     if (previousYearRef.current !== currentYear) {
       previousYearRef.current = currentYear;
       return;
     }
-    localStorage.setItem(STORAGE_KEYS.LAYOUT(currentYear), JSON.stringify(items));
-    localStorage.setItem(STORAGE_KEYS.TABLES(currentYear), JSON.stringify(tables));
-    localStorage.setItem(`seating_app_cols_${currentYear}`, JSON.stringify(columnConfigs));
+    const timer = setTimeout(saveLayout, 1000); // Debounce save
+    return () => clearTimeout(timer);
   }, [currentYear, items, tables, columnConfigs]);
 
 
@@ -113,7 +136,7 @@ export default function Home() {
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 8 } }));
 
 
-  const snap = (v: number) => Math.round(v / GRID_SIZE) * GRID_SIZE;
+  // snap is defined at module level above
 
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
 
@@ -180,22 +203,28 @@ export default function Home() {
   };
 
   const addRow = () => {
-    const lY = items.length > 0 || tables.length > 0 ? Math.max(...items.map(i => i.y), ...tables.map(t => t.y)) : 100;
-    const nY = snap(lY + 144);
+    // Table container height is 144px (hardcoded in TableComponent).
+    // Use tableY + 168 (144 table height + 24px gap) so rows have breathing room.
+    const lY = tables.length > 0
+      ? Math.max(...tables.map(t => t.y))
+      : (items.length > 0 ? Math.max(...items.map(i => i.y)) - 44 : 0);
+    const nY = snap(lY + 168);
+    const rowNum = tables.length > 0 ? (Array.from(new Set(tables.map(t => t.y))).length + 1) : 1;
     const nTs: Table[] = [];
     const nSs: LayoutItem[] = [];
+    const now = Date.now();
 
-    columnConfigs.forEach((col, idx) => {
-      const tId = `table-${Date.now()}-${idx}`;
+    columnConfigs.forEach((col) => {
+      const tId = `table-r${rowNum}-${col.id}`;
       const sIds: string[] = [];
       const tX = snap(col.xOffset);
       const tSs: LayoutItem[] = Array.from({ length: col.seatsPerTable }).map((_, si) => {
-        const sId = `seat-${tId}-${si}`;
+        const sId = `seat-r${rowNum}-${col.id}-s${si}`;
         sIds.push(sId);
         return {
           id: sId,
           type: "seat" as const,
-          label: `${col.id.toUpperCase()} - S${si + 1}`,
+          label: `R${rowNum} ${col.id.toUpperCase()} S${si + 1}`,
           x: tX + (si * 100),
           y: nY + 44,
           roomId: activeRoomId,
@@ -205,7 +234,7 @@ export default function Home() {
       });
       nTs.push({
         id: tId,
-        label: `Row ${Math.floor(nY / 144) + 1} - ${col.id.toUpperCase()}`,
+        label: `Row ${rowNum} - ${col.id.toUpperCase()}`,
         x: tX,
         y: nY,
         roomId: activeRoomId,
@@ -221,33 +250,44 @@ export default function Home() {
   const addColumn = () => {
     const cCount = prompt("Seats per table for this column?", "2") || "2";
     const seats = parseInt(cCount);
-    if (isNaN(seats)) return;
+    if (isNaN(seats) || seats < 1) return;
 
-    const newColId = `col${columnConfigs.length + 1}`;
+    // Use max existing col number +1 so stale DB configs don't skew the counter
+    const maxColNum = columnConfigs.reduce((max, c) => {
+      const n = parseInt(c.id.replace("col", ""));
+      return isNaN(n) ? max : Math.max(max, n);
+    }, 0);
+    const newColId = `col${maxColNum + 1}`;
     const newXOffset = getNextX(columnConfigs);
     const newCol: ColumnConfig = { id: newColId, seatsPerTable: seats, xOffset: newXOffset };
 
+    // If there are no existing rows, just register the column config.
+    // Future "Add Row" calls will include this column automatically.
+    if (tables.length === 0) {
+      setColumnConfigs(prev => [...prev, newCol]);
+      return;
+    }
+
     setColumnConfigs(prev => [...prev, newCol]);
 
-    // Retroactively add tables for the new column
-    const existingYs = Array.from(new Set([...items.map(i => i.y), ...tables.map(t => t.y)]));
-    const finalYs = existingYs.length > 0 ? existingYs.map(y => y - (y % 144)) : [144];
-    const uniqueYs = Array.from(new Set(finalYs));
-
+    // Retroactively add a table for this column at each existing row y-position
+    const existingTableYs = Array.from(new Set(tables.map(t => t.y))).sort((a, b) => a - b);
     const nTs: Table[] = [];
     const nSs: LayoutItem[] = [];
+    const now = Date.now();
 
-    uniqueYs.forEach((tableY, idx) => {
-      const tableId = `table-${Date.now()}-${newColId}-${idx}`;
+    existingTableYs.forEach((tableY, idx) => {
+      const rowNum = idx + 1;
+      const tableId = `table-r${rowNum}-${newColId}`;
       const sIds: string[] = [];
 
       const tableSeats: LayoutItem[] = Array.from({ length: seats }).map((_, si) => {
-        const sId = `seat-${tableId}-${si}`;
+        const sId = `seat-r${rowNum}-${newColId}-s${si}`;
         sIds.push(sId);
         return {
           id: sId,
           type: "seat" as const,
-          label: `${newColId.toUpperCase()} - S${si + 1}`,
+          label: `R${rowNum} ${newColId.toUpperCase()} S${si + 1}`,
           x: newXOffset + (si * 100),
           y: tableY + 44,
           roomId: activeRoomId,
@@ -258,7 +298,7 @@ export default function Home() {
 
       nTs.push({
         id: tableId,
-        label: `Row ${Math.floor(tableY / 144) + 1} - ${newColId.toUpperCase()}`,
+        label: `Row ${rowNum} - ${newColId.toUpperCase()}`,
         x: newXOffset,
         y: tableY,
         roomId: activeRoomId,
@@ -294,13 +334,24 @@ export default function Home() {
     setItems(prev => prev.map(it => seatIds.includes(it.id) ? { ...it, x: snap(it.x + deltaX) } : it));
   };
 
-  const clear = () => {
+  const clear = async () => {
     if (confirm("Clear layout for this year?")) {
-      setItems([]); setTables([]);
-      setColumnConfigs([{ id: "col1", seatsPerTable: 2, xOffset: 100 }, { id: "col2", seatsPerTable: 3, xOffset: 484 }]);
-      localStorage.removeItem(`seating_app_layout_${currentYear}`);
-      localStorage.removeItem(`seating_app_tables_${currentYear}`);
-      localStorage.removeItem(`seating_app_cols_${currentYear}`);
+      setItems([]);
+      setTables([]);
+      setColumnConfigs([]);
+
+      try {
+        await fetch("/api/layout", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            year: currentYear,
+            items: [],
+            tables: [],
+            columns: []
+          })
+        });
+      } catch (e) { console.error("Failed to clear layout on server:", e); }
     }
   };
 

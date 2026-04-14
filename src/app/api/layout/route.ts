@@ -54,14 +54,15 @@ export async function POST(req: Request) {
             .filter(item => item.type === 'seat' && item.memberId)
             .map(item => ({
                 year,
+                seatId: item.id,
                 seatLabel: item.label,
                 memberId: item.memberId
             }));
 
         for (const assign of assignments) {
             await db.run(
-                `INSERT OR REPLACE INTO seat_assignments (year, seatLabel, memberId) VALUES (?, ?, ?)`,
-                [assign.year, assign.seatLabel, assign.memberId]
+                `INSERT OR REPLACE INTO seat_assignments (year, seatId, seatLabel, memberId) VALUES (?, ?, ?, ?)`,
+                [assign.year, assign.seatId, assign.seatLabel, assign.memberId]
             );
         }
 

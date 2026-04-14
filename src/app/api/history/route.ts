@@ -19,16 +19,13 @@ export async function GET(req: Request) {
             );
             return NextResponse.json(history);
         } else {
-            // Get ALL history for tooltips (grouped by seatLabel)
-            // Joined with member names for display
+            // Get ALL history for tooltips, include seatId so frontend can key by unique seat
             const history = await db.all(`
-                SELECT sa.year, sa.seatLabel, sa.memberId, m.displayName
+                SELECT sa.year, sa.seatId, sa.seatLabel, sa.memberId, m.displayName
                 FROM seat_assignments sa
                 JOIN members m ON sa.memberId = m.id
                 ORDER BY sa.year DESC
             `);
-
-            // Group by seatLabel on the server or client? Let's send raw list and group on client for flexibility
             return NextResponse.json(history);
         }
     } catch (error) {
