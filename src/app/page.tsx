@@ -14,9 +14,11 @@ import { LayoutEditor } from "@/components/LayoutEditor";
 import { MemberCard } from "@/components/MemberCard";
 import { Member, LayoutItem, HistoryMap, ColumnConfig, Table } from "@/lib/types";
 import { ROOMS } from "@/lib/mock-data";
-import { Users, Settings, Plus, LayoutGrid, FileText, Grid3X3, Trash2, ChevronLeft, ChevronRight } from "lucide-react";
+import { Users, Settings, Plus, LayoutGrid, FileText, Grid3X3, Trash2, ChevronLeft, ChevronRight, Download } from "lucide-react";
 import Link from "next/link";
 import { PdfUploader } from "@/components/PdfUploader";
+import { toPng } from "html-to-image";
+import jsPDF from "jspdf";
 import { cn } from "@/lib/utils";
 
 
@@ -276,18 +278,23 @@ export default function Home() {
 
     setColumnConfigs(prev => [...prev, newCol]);
 
-    // Retroactively add a table for this column at each existing row y-position
-    const existingTableYs = Array.from(new Set(tables.map(t => t.y))).sort((a, b) => a - b);
+    // Retroactively add a table for this column at each existing logical row
+    const rowMap = new Map<string, number>(); // rowNum -> y
+    tables.forEach(t => {
+      const match = t.label.match(/Row (\d+)/i);
+      if (match) {
+        const rn = match[1];
+        // If we have multiple tables in the same logical row, pick the one with the smallest Y (usually the top-most)
+        if (!rowMap.has(rn) || t.y < rowMap.get(rn)!) {
+          rowMap.set(rn, t.y);
+        }
+      }
+    });
+
     const nTs: Table[] = [];
     const nSs: LayoutItem[] = [];
-    const now = Date.now();
 
-    existingTableYs.forEach((tableY) => {
-      // Find row number for this Y
-      const rowTable = tables.find(t => Math.abs(t.y - tableY) < 10);
-      const rowNumMatch = rowTable?.label.match(/Row (\d+)/);
-      const rowNum = rowNumMatch ? rowNumMatch[1] : "?";
-
+    Array.from(rowMap.entries()).forEach(([rowNum, tableY]) => {
       const tableId = crypto.randomUUID();
       const sIds: string[] = [];
 
@@ -424,6 +431,35 @@ export default function Home() {
     }
   };
 
+  const handleExportPdf = async () => {
+    const node = document.getElementById("layout-editor-viewport");
+    if (!node) return;
+
+    try {
+      const dataUrl = await toPng(node, {
+        backgroundColor: "#f8fafc",
+        pixelRatio: 2,
+        skipFonts: true,
+      });
+
+      const img = new Image();
+      img.src = dataUrl;
+      await new Promise((res) => (img.onload = res));
+
+      const pdf = new jsPDF({
+        orientation: "landscape",
+        unit: "px",
+        format: [img.width, img.height],
+      });
+
+      pdf.addImage(dataUrl, "PNG", 0, 0, img.width, img.height);
+      pdf.save(`seating-chart-${currentYear}-${activeRoomId}.pdf`);
+    } catch (e) {
+      console.error("Failed to export PDF:", e);
+      alert("Failed to export PDF. Please try again.");
+    }
+  };
+
   const updateColumnSeats = (columnId: string, seats: number) => {
     const targetIdx = columnConfigs.findIndex(c => c.id === columnId);
     if (targetIdx === -1) return;
@@ -538,6 +574,7 @@ export default function Home() {
               <button onClick={addRow} className="px-4 py-2 bg-blue-600 text-white rounded-xl text-sm font-semibold hover:bg-blue-700 shadow-md shadow-blue-500/20 flex items-center gap-2"><Plus className="w-4 h-4" />Add Row</button>
               <div className="w-[1px] h-8 bg-slate-200 mx-2" />
               <button onClick={() => setShowPdfUploader(!showPdfUploader)} className={cn("p-2.5 border rounded-xl shadow-sm", showPdfUploader ? "bg-slate-900 text-white border-slate-900" : "bg-white text-slate-600 border-slate-200")} title="Import PDF"><FileText className="w-5 h-5" /></button>
+              <button onClick={handleExportPdf} className="p-2.5 border border-slate-200 bg-white text-slate-600 rounded-xl hover:bg-slate-50 transition-colors shadow-sm" title="Export PDF"><Download className="w-5 h-5" /></button>
               <button onClick={clear} className="p-2.5 border border-red-100 bg-red-50 text-red-600 rounded-xl hover:bg-red-100 transition-colors shadow-sm" title="Clear Layout"><Trash2 className="w-5 h-5" /></button>
             </div>
           </header>

@@ -45,6 +45,7 @@ export function LayoutEditor({
     return (
         <div
             ref={setNodeRef}
+            id="layout-editor-viewport"
             className="flex-1 relative overflow-auto bg-[#f8fafc] p-24 min-h-[1000px] border-l border-slate-200"
         >
             {/* Grid Pattern */}
