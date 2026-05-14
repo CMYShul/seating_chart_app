@@ -127,7 +127,7 @@ export function LayoutItemComponent({
                 occupant ? (
                     <div className="flex flex-col items-center text-center p-2 w-full" {...listeners}>
                         <User className="w-6 h-6 text-blue-500 mb-1" />
-                        <span className="text-sm font-bold text-slate-900 leading-tight dir-rtl" dir="rtl">
+                        <span className="text-sm font-bold text-slate-900 leading-tight" dir="rtl">
                             {occupant.displayName}
                         </span>
                     </div>

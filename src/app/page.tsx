@@ -209,17 +209,23 @@ export default function Home() {
       ? Math.max(...tables.map(t => t.y))
       : (items.length > 0 ? Math.max(...items.map(i => i.y)) - 44 : 0);
     const nY = snap(lY + 168);
-    const rowNum = tables.length > 0 ? (Array.from(new Set(tables.map(t => t.y))).length + 1) : 1;
+
+    // Robust row number: find the max existing Row X and add 1
+    const existingRowNums = tables.map(t => {
+      const match = t.label.match(/Row (\d+)/);
+      return match ? parseInt(match[1]) : 0;
+    });
+    const rowNum = existingRowNums.length > 0 ? Math.max(...existingRowNums) + 1 : 1;
+
     const nTs: Table[] = [];
     const nSs: LayoutItem[] = [];
-    const now = Date.now();
 
     columnConfigs.forEach((col) => {
-      const tId = `table-r${rowNum}-${col.id}`;
+      const tId = crypto.randomUUID();
       const sIds: string[] = [];
       const tX = snap(col.xOffset);
       const tSs: LayoutItem[] = Array.from({ length: col.seatsPerTable }).map((_, si) => {
-        const sId = `seat-r${rowNum}-${col.id}-s${si}`;
+        const sId = crypto.randomUUID();
         sIds.push(sId);
         return {
           id: sId,
@@ -276,13 +282,17 @@ export default function Home() {
     const nSs: LayoutItem[] = [];
     const now = Date.now();
 
-    existingTableYs.forEach((tableY, idx) => {
-      const rowNum = idx + 1;
-      const tableId = `table-r${rowNum}-${newColId}`;
+    existingTableYs.forEach((tableY) => {
+      // Find row number for this Y
+      const rowTable = tables.find(t => Math.abs(t.y - tableY) < 10);
+      const rowNumMatch = rowTable?.label.match(/Row (\d+)/);
+      const rowNum = rowNumMatch ? rowNumMatch[1] : "?";
+
+      const tableId = crypto.randomUUID();
       const sIds: string[] = [];
 
       const tableSeats: LayoutItem[] = Array.from({ length: seats }).map((_, si) => {
-        const sId = `seat-r${rowNum}-${newColId}-s${si}`;
+        const sId = crypto.randomUUID();
         sIds.push(sId);
         return {
           id: sId,
@@ -380,14 +390,24 @@ export default function Home() {
       row.sort((a, b) => a.x - b.x).forEach((table, ci) => {
         if (ci >= pdfCells.length) return;
         const cellText = pdfCells[ci];
-        // Try to find a member by display name (simple fuzzy)
-        const member = members.find(m => m.displayName.toLowerCase().includes(cellText.toLowerCase()) || cellText.toLowerCase().includes(m.displayName.toLowerCase()));
-        if (member) {
-          // Assign to the first seat in the table for now, or distribute
-          const sId = table.seatIds[0];
-          const idx = newItems.findIndex(it => it.id === sId);
-          if (idx !== -1) newItems[idx].memberId = member.id;
-        }
+
+        // Some cells might contain multiple names separated by common delimiters
+        const names = cellText.split(/[,&]|\s{2,}/).map(n => n.trim()).filter(Boolean);
+
+        names.forEach((name, ni) => {
+          if (ni >= table.seatIds.length) return;
+
+          const member = members.find(m =>
+            m.displayName.toLowerCase().includes(name.toLowerCase()) ||
+            name.toLowerCase().includes(m.displayName.toLowerCase())
+          );
+
+          if (member) {
+            const sId = table.seatIds[ni];
+            const idx = newItems.findIndex(it => it.id === sId);
+            if (idx !== -1) newItems[idx].memberId = member.id;
+          }
+        });
       });
     });
 
@@ -432,19 +452,25 @@ export default function Home() {
       if (dX !== 0) tableDx.set(table.id, dX);
 
       if (table.columnId === columnId) {
-        const oldIds = table.seatIds;
-        const newSeatIds = Array.from({ length: seats }).map((_, i) => `seat-${table.id}-${i}`);
-        oldIds.forEach(id => itemsToRemove.add(id));
+        const oldSeatIds = table.seatIds;
+        const oldSeats = items.filter(it => oldSeatIds.includes(it.id));
+        const newSeatIds = Array.from({ length: seats }).map((_, i) => i < oldSeatIds.length ? oldSeatIds[i] : crypto.randomUUID());
+
+        // Mark seats to remove only if they are beyond the new count
+        oldSeatIds.slice(seats).forEach(id => itemsToRemove.add(id));
+
         newSeatIds.forEach((sId, si) => {
+          const existingSeat = oldSeats.find(s => s.id === sId);
           newSeats.push({
             id: sId,
             type: "seat",
-            label: `${columnId.toUpperCase()} - S${si + 1}`,
+            label: existingSeat?.label || `${columnId.toUpperCase()} - S${si + 1}`,
             x: tableX + (si * 100),
             y: table.y + 44,
             roomId: activeRoomId,
             tableId: table.id,
-            columnId: columnId
+            columnId: columnId,
+            memberId: existingSeat?.memberId
           });
         });
         newTables.push({ ...table, x: tableX, seatIds: newSeatIds });

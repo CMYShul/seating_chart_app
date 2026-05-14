@@ -32,10 +32,10 @@ export function MemberCard({ member, isDragging }: MemberCardProps) {
                 "p-3 mb-2 rounded-lg cursor-grab active:cursor-grabbing transition-all",
                 "bg-white border border-slate-200 shadow-sm hover:shadow-md",
                 isDragging && "opacity-50 grayscale",
-                "flex flex-col gap-1 items-start text-left"
+                "flex flex-col gap-1 items-start"
             )}
         >
-            <span className="font-semibold text-slate-800 dir-rtl w-full text-right" dir="rtl">
+            <span className="font-semibold text-slate-800 w-full text-right" dir="rtl">
                 {member.displayName}
             </span>
             <span className="text-xs text-slate-500">
