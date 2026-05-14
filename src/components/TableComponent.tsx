@@ -47,8 +47,7 @@ export function TableComponent({ table, onDelete, selected, onSelect }: TableCom
                 isDragging
                     ? "border-blue-500 bg-blue-50/20 shadow-2xl scale-[1.02] z-50 ring-4 ring-blue-500/10"
                     : "border-slate-200 bg-white/30 hover:border-slate-300",
-                selected && "ring-4 ring-blue-500 ring-offset-2 bg-blue-50/20 border-blue-400 z-40",
-                "pointer-events-none" // Seats inside catch clicks; header catches drag
+                selected && "ring-4 ring-blue-500 ring-offset-2 bg-blue-50/20 border-blue-400 z-40"
             )}
         >
             <div className="absolute -top-4 left-6 flex items-center gap-1 group pointer-events-auto">

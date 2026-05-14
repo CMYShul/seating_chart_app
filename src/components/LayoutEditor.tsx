@@ -118,12 +118,22 @@ export function LayoutEditor({
 
             {items.length === 0 && tables.length === 0 && (
                 <div className="absolute inset-0 flex items-center justify-center flex-col gap-4 text-slate-400">
-                    <div className="p-8 bg-white rounded-3xl border border-slate-200 shadow-xl shadow-slate-200/50 flex flex-col items-center">
-                        <div className="w-16 h-16 bg-slate-50 rounded-2xl flex items-center justify-center mb-4 border border-slate-100">
-                            <Grid3X3 className="w-8 h-8 opacity-20" />
+                    <div className="p-8 bg-white rounded-3xl border border-slate-200 shadow-xl shadow-slate-200/50 flex flex-col items-center max-w-sm text-center">
+                        <div className="w-16 h-16 bg-blue-50 rounded-2xl flex items-center justify-center mb-4 border border-blue-100">
+                            <Grid3X3 className="w-8 h-8 text-blue-500 opacity-40" />
                         </div>
-                        <p className="text-sm font-bold text-slate-900">Empty Workspace</p>
-                        <p className="text-xs text-slate-400 mt-1">Add a row or column to start seating.</p>
+                        <p className="text-sm font-bold text-slate-900">Workspace is ready!</p>
+                        <p className="text-xs text-slate-400 mt-1 leading-relaxed">
+                            Start by adding a row to create your grid. You can also import a previous year's layout from a PDF.
+                        </p>
+                        <div className="mt-6 flex flex-col gap-2 w-full">
+                            <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Quick Start</div>
+                            <div className="flex gap-2 justify-center">
+                                <span className="px-3 py-1 bg-slate-100 rounded-lg text-[10px] font-bold text-slate-600">1. Add Row</span>
+                                <span className="px-3 py-1 bg-slate-100 rounded-lg text-[10px] font-bold text-slate-600">2. Drag Members</span>
+                                <span className="px-3 py-1 bg-slate-100 rounded-lg text-[10px] font-bold text-slate-600">3. Save</span>
+                            </div>
+                        </div>
                     </div>
                 </div>
             )}

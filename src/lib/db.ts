@@ -1,5 +1,6 @@
 import sqlite3 from 'sqlite3';
 import { open, Database } from 'sqlite';
+import { MOCK_MEMBERS } from './mock-data';
 
 let db: Database | null = null;
 
@@ -61,6 +62,18 @@ export async function getDb() {
                 FOREIGN KEY (memberId) REFERENCES members(id)
             );
         `);
+    }
+
+    // Seed members if table is empty
+    const memberCount = await db.get('SELECT COUNT(*) as count FROM members');
+    if (memberCount.count === 0) {
+        for (const m of MOCK_MEMBERS) {
+            await db.run(
+                `INSERT INTO members (id, firstName, lastName, displayName, roomId, createdAt)
+                 VALUES (?, ?, ?, ?, ?, ?)`,
+                [m.id, m.firstName, m.lastName, m.displayName, m.roomId, Date.now()]
+            );
+        }
     }
 
     return db;
